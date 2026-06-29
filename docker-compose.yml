@@ -1,0 +1,37 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-labtrack}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-labtrack}
+      POSTGRES_DB: ${POSTGRES_DB:-labtrack}
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-labtrack} -d ${POSTGRES_DB:-labtrack}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-labtrack}:${POSTGRES_PASSWORD:-labtrack}@db:5432/${POSTGRES_DB:-labtrack}
+    # Belt-and-suspenders: the healthcheck can report ready against Postgres's cold-init
+    # temporary (socket-only) server, so wait for a real TCP connection before migrating.
+    command:
+      - sh
+      - -c
+      - |
+        until python -c 'import os, psycopg; psycopg.connect(os.environ["DATABASE_URL"].replace("+psycopg", "")).close()' 2>/dev/null; do
+          echo "waiting for postgres..."; sleep 1;
+        done
+        alembic upgrade head && python -m labtrack.seed
+
+volumes:
+  pgdata:
