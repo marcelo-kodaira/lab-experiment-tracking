@@ -184,34 +184,7 @@ erDiagram
 
 ---
 
-## 3. Design principles / Non-goals
-
-**Governing principle:** the database is the single source of truth for every invariant. There is no application layer; the schema *is* the architecture. Integrity (NOT NULL, CHECK, foreign keys, the polymorphism rules) lives in the one layer that enforces it for every writer.
-
-**Principles adopted:**
-
-- **YAGNI** — named rationale for every absence; a live schema change is one `Mapped[…]` + one reviewed migration.
-- **DRY** — `MetaData(naming_convention)`, `TimestampMixin`, one trigger function. Stops at the Alembic boundary (migrations are a frozen ledger) and never hides literal seed data.
-- **12-Factor config** — `DATABASE_URL` from env (fail-fast), `alembic.ini` url blank, `.env` gitignored, `.env.example` committed.
-- **SRP at module level** — `base` / `models` / `seed` / `alembic`; O/L/I/D are not applicable (no behavioral object graph).
-
-**Patterns explicitly rejected:**
-
-| Pattern | Why rejected |
-|---------|--------------|
-| Hexagonal / Ports & Adapters | Empty hexagon; Postgres portability is an intentional anti-goal; `Engine/Dialect` already *is* the adapter |
-| DDD strategic | One schema = one context; ubiquitous-language naming kept as plain schema hygiene |
-| DDD tactical | No behavior to encapsulate; a Python VO re-encodes the CHECK where it isn't authoritative → drift |
-| Repository pattern | `Session` already is Unit-of-Work + Identity Map |
-| API / service layer | Out of scope; deliverable is a schema + run-once tooling |
-
-**Lookup tables over native ENUMs:** `ALTER TYPE … ADD VALUE` can't be used in the same transaction it's added, values can't be dropped/reordered, and Alembic autogenerate emits nothing for enum changes. A lookup-table extend-by-INSERT (including live) + carries metadata (`label`, `sort_order`, `is_terminal`).
-
-**`value_kind` as `TEXT + CHECK`, not ENUM or lookup table:** Adding a *kind* requires a new value column — that's a migration regardless. A lookup table would advertise runtime flexibility the 1:1-column mapping can't honor. An ENUM carries the same DDL-in-transaction problem. `TEXT + CHECK` is atomic, reversible, and honest.
-
----
-
-## 4. The measurement model
+## 3. The measurement model
 
 `measurements` stores three incompatible value shapes in one table via *trigger-free DB-enforced polymorphism.*
 
@@ -260,7 +233,7 @@ The domain CHECK is load-bearing, not hygiene: the biconditionals alone are sati
 
 ---
 
-## 5. ON DELETE matrix
+## 4. ON DELETE matrix
 
 Scientific records are not casually deleted; lifecycle is expressed by status, not row removal.
 
@@ -284,7 +257,7 @@ Scientific records are not casually deleted; lifecycle is expressed by status, n
 
 ---
 
-## 6. Indexing
+## 5. Indexing
 
 Postgres auto-indexes primary keys and unique constraints; it does **not** auto-index the referencing side of a foreign key.
 
@@ -306,12 +279,12 @@ Postgres auto-indexes primary keys and unique constraints; it does **not** auto-
 
 ---
 
-## 7. Assumptions
+## 6. Assumptions
 
 1. **Per-project role** (`project_members.project_role`: lead/collaborator) added beyond the brief's lab-wide role.
 2. **Experiment team is M:N** (`experiment_participants`) rather than a single lead; participant role is free-form.
 3. **Lineage is M:N** with typed `relation_type`; only self-loops are DB-prevented. Deeper cycle prevention is app-level.
-4. **`recorded_by`** captures the writeup author; nullable; `SET NULL` on researcher delete (see §4 runbook).
+4. **`recorded_by`** captures the writeup author; nullable; `SET NULL` on researcher delete (see §3 runbook).
 5. **`value_kind` ∈ {numeric, categorical, text}.** A genuinely new *kind* needs a migration; a new measurement *type* needs only an `INSERT`.
 6. **Unit** is canonical on the measurement type (numeric only); no per-measurement override.
 7. **`value_numeric` is unbounded `NUMERIC`** (exact decimal); per-type precision is not DB-enforced.
@@ -326,7 +299,7 @@ Postgres auto-indexes primary keys and unique constraints; it does **not** auto-
 
 ---
 
-## 8. Tradeoffs & what we chose not to do
+## 7. Tradeoffs & what we chose not to do
 
 - **Trigger-free polymorphism (composite FKs + biconditional CHECKs)** over JSONB / EAV / class-table inheritance. Buys DB-enforced type safety and queryable columns; costs a DDL change to add a *kind*. JSONB was rejected (no type safety, illegal categories accepted); per-type tables were rejected (DDL per kind, join sprawl).
 
@@ -336,13 +309,11 @@ Postgres auto-indexes primary keys and unique constraints; it does **not** auto-
 
 - **M:N lineage & team** (richer than the brief's singular phrasing) over self-FK/single-lead. Buys live headroom; costs more joins and app-level cycle prevention.
 
-- **DB-as-source-of-truth with no app/repository/hexagonal layer.** Proportionate to a schema deliverable; costs portability — an intentional non-goal.
-
 - **Chose NOT to do — a full audit/history layer.** No status-transition history, no temporal/row-versioned measurements, no attribution audit table. Significant complexity with no stated requirement; append-only + `created_at` + `is_active` cover v1. **This is the first thing that would be added if asked.** Also deferred: units/dimensions table, censored-reading `value_operator`, `measurements` partitioning, UUID PKs, per-measurement unit override, option-level soft-deactivation.
 
 ---
 
-## 9. Open questions for the lab
+## 8. Open questions for the lab
 
 1. Do you record **below-detection-limit / censored** results (`<0.01`, `ND`, ranges)? → drives a `value_operator`.
 2. Do you need **unit standardization / dimensional consistency** (a units table), or is canonical-unit-per-type enough?
@@ -359,7 +330,7 @@ Postgres auto-indexes primary keys and unique constraints; it does **not** auto-
 
 ---
 
-## 10. Verification commands
+## 9. Verification commands
 
 **Bring up the database (if not already running):**
 
@@ -389,7 +360,7 @@ DATABASE_URL=postgresql+psycopg://labtrack:labtrack@localhost:5432/labtrack pyte
 DATABASE_URL=postgresql+psycopg://labtrack:labtrack@localhost:5432/labtrack alembic check
 ```
 
-Expected output: `No new upgrade operations detected.` Note: autogenerate does not detect trigger functions, trigger definitions, or CHECK body changes — see §11.
+Expected output: `No new upgrade operations detected.` Note: autogenerate does not detect trigger functions, trigger definitions, or CHECK body changes — see §10.
 
 **Smoke-test CHECKs fire** (optional, from psql):
 
@@ -411,7 +382,7 @@ docker compose exec -T db psql -U labtrack -d labtrack -c "SELECT count(*) FROM 
 
 ---
 
-## 11. Autogenerate caveats
+## 10. Autogenerate caveats
 
 Alembic `autogenerate` detects most schema changes but has deliberate blind spots — every generated revision is hand-reviewed before commit.
 
