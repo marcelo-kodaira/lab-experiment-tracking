@@ -39,3 +39,18 @@ def test_measurement_types_has_composite_unique_and_kind_check() -> None:
 def test_measurement_type_options_pk() -> None:
     t = Base.metadata.tables["measurement_type_options"]
     assert [c.name for c in t.primary_key.columns] == ["measurement_type_id", "code"]
+
+
+def test_experiment_project_id_not_null() -> None:
+    t = Base.metadata.tables["experiments"]
+    assert t.c["project_id"].nullable is False
+
+
+def test_researcher_email_unique() -> None:
+    t = Base.metadata.tables["researchers"]
+    assert any(
+        c.name == "email"
+        for u in t.constraints
+        for c in getattr(u, "columns", [])
+        if u.__class__.__name__ == "UniqueConstraint"
+    )

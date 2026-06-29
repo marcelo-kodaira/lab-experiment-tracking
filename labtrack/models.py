@@ -4,10 +4,15 @@ Order: lookups -> measurement catalog -> core entities -> junctions -> measureme
 CHECK constraints and composite FKs are written literally beside their columns.
 """
 
+from datetime import date, datetime
+
 from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
     ForeignKeyConstraint,
     Identity,
     Integer,
@@ -90,3 +95,59 @@ class MeasurementTypeOption(CreatedAtMixin, Base):
             name="fk_measurement_type_options_type_id_kind",  # explicit: convention name would be 65 chars (>63 PG limit) and get silently truncated+hashed
         ),
     )
+
+
+# --- core entities ---
+class Researcher(TimestampMixin, Base):
+    __tablename__ = "researchers"
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    full_name: Mapped[str] = mapped_column(Text, nullable=False)
+    email: Mapped[str] = mapped_column(Text, nullable=False)
+    phone: Mapped[str | None] = mapped_column(Text)
+    role_code: Mapped[str] = mapped_column(
+        ForeignKey("roles.code", ondelete="RESTRICT"), nullable=False
+    )
+    __table_args__ = (UniqueConstraint("email", name="email"),)
+
+
+class Project(TimestampMixin, Base):
+    __tablename__ = "projects"
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    status_code: Mapped[str] = mapped_column(
+        ForeignKey("project_statuses.code", ondelete="RESTRICT"), nullable=False
+    )
+
+
+class Experiment(TimestampMixin, Base):
+    __tablename__ = "experiments"
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+    )
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    hypothesis: Mapped[str | None] = mapped_column(Text)
+    start_date: Mapped[date | None] = mapped_column(Date)
+    end_date: Mapped[date | None] = mapped_column(Date)
+    status_code: Mapped[str] = mapped_column(
+        ForeignKey("experiment_statuses.code", ondelete="RESTRICT"), nullable=False
+    )
+    __table_args__ = (
+        CheckConstraint(
+            "end_date IS NULL OR start_date IS NULL OR end_date >= start_date",
+            name="date_order",
+        ),
+    )
+
+
+class Sample(TimestampMixin, Base):
+    __tablename__ = "samples"
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    code: Mapped[str] = mapped_column(Text, nullable=False)  # lab-assigned identifier
+    sample_type_code: Mapped[str] = mapped_column(
+        ForeignKey("sample_types.code", ondelete="RESTRICT"), nullable=False
+    )
+    collected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    storage_location: Mapped[str | None] = mapped_column(Text)  # free text (hierarchy deferred)
+    __table_args__ = (UniqueConstraint("code", name="code"),)
