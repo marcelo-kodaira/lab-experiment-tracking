@@ -21,6 +21,8 @@ packages = ["labtrack"]
 [tool.ruff]
 target-version = "py312"
 line-length = 100
+# Alembic migrations are a frozen, hand-augmented ledger — never reformat/lint them.
+extend-exclude = ["alembic/versions"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
