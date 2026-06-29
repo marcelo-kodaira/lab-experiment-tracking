@@ -41,21 +41,122 @@ docker compose up
 
 **15 tables:** 4 reference lookups + 1 catalog + 1 catalog-options child + 4 core entities + 4 junctions + 1 fact.
 
+```mermaid
+erDiagram
+    roles                     ||--o{ researchers              : "classifies"
+    project_statuses          ||--o{ projects                 : "status of"
+    experiment_statuses       ||--o{ experiments              : "status of"
+    sample_types              ||--o{ samples                  : "type of"
+
+    projects                  ||--o{ experiments              : "groups"
+    projects                  ||--o{ project_members          : "membership"
+    researchers               ||--o{ project_members          : "membership"
+
+    experiments               ||--o{ experiment_participants  : "team"
+    researchers               ||--o{ experiment_participants  : "team"
+    experiments               ||--o{ experiment_samples       : "uses"
+    samples                   ||--o{ experiment_samples       : "used in"
+    experiments               ||--o{ experiment_lineage       : "follows"
+    experiments               ||--o{ experiment_lineage       : "precedes"
+
+    experiments               ||--o{ measurements             : "produces"
+    measurement_types         ||--o{ measurements             : "typed by"
+    measurement_types         ||--o{ measurement_type_options : "allows"
+    samples                   |o--o{ measurements             : "sampled from (optional)"
+    measurement_type_options  |o--o{ measurements             : "allowed category (optional)"
+    researchers               |o--o{ measurements             : "recorded by (optional)"
+
+    roles {
+        text code PK
+        text label
+    }
+    project_statuses {
+        text code PK
+        text label
+        bool is_terminal
+    }
+    experiment_statuses {
+        text code PK
+        text label
+        bool is_terminal
+    }
+    sample_types {
+        text code PK
+        text label
+    }
+    researchers {
+        bigint id PK
+        text full_name
+        text email UK
+        text role_code FK
+    }
+    projects {
+        bigint id PK
+        text title
+        text status_code FK
+    }
+    experiments {
+        bigint id PK
+        text title
+        text hypothesis
+        bigint project_id FK
+        text status_code FK
+        date start_date
+        date end_date
+    }
+    samples {
+        bigint id PK
+        text code UK
+        text sample_type_code FK
+        timestamptz collected_at
+        text storage_location
+    }
+    measurement_types {
+        bigint id PK
+        text code UK
+        text value_kind
+        text unit
+        bool is_active
+    }
+    measurement_type_options {
+        bigint measurement_type_id PK, FK
+        text code PK
+        text label
+    }
+    measurements {
+        bigint id PK
+        bigint experiment_id FK
+        bigint sample_id FK "nullable"
+        bigint measurement_type_id FK
+        text value_kind "num/cat/text discriminator"
+        numeric value_numeric "if numeric"
+        text value_text "if text"
+        text value_category "if categorical"
+        timestamptz measured_at
+        bigint recorded_by FK "nullable"
+    }
+    project_members {
+        bigint project_id PK, FK
+        bigint researcher_id PK, FK
+        text project_role
+    }
+    experiment_participants {
+        bigint experiment_id PK, FK
+        bigint researcher_id PK, FK
+        text role
+    }
+    experiment_samples {
+        bigint experiment_id PK, FK
+        bigint sample_id PK, FK
+    }
+    experiment_lineage {
+        bigint experiment_id PK, FK
+        bigint derived_from_id PK, FK
+        text relation_type
+    }
 ```
-roles ──1:N── researchers ──M:N(project_members)── projects ──1:N── experiments
-                   │                                                  │   │
-                   │ M:N(experiment_participants)─────────────────────┘   │
-                   │                                                       │
-                   └── recorded_by (0:N) ── measurements ──N:1── experiments
-                                               │   │
-                       measurement_types ──────┘   └── N:0..1 ── samples ──N:1── sample_types
-                       │  (+ measurement_type_options)                │
-                       └── N:1 ─ measurements                          │
-                                                                       │
-   experiments ──M:N(experiment_samples)── samples                    │
-   experiments ──M:N(experiment_lineage: derived_from + relation_type)── experiments (self)
-   projects ──N:1── project_statuses       experiments ──N:1── experiment_statuses
-```
+
+*Crow's-foot reading: `||` exactly one, `o{` zero-or-many, `|o` zero-or-one. The three `|o--o{` links into `measurements` are the nullable references (ambient readings with no sample, instrument imports with no recorder, numeric/text rows with no category). `experiment_lineage` is the self-referential M:N (an experiment can derive from several predecessors).*
 
 | # | Table | Kind |
 |---|-------|------|
