@@ -68,3 +68,25 @@ def test_lineage_self_and_relation_checks_present() -> None:
     )
     assert "experiment_id <> derived_from_id" in sqltexts
     assert "relation_type" in sqltexts
+
+
+def test_measurements_polymorphism_structure() -> None:
+    t = Base.metadata.tables["measurements"]
+    assert t.c["value_kind"].nullable is False
+    assert t.c["sample_id"].nullable is True
+    assert t.c["experiment_id"].nullable is False
+    assert "updated_at" not in t.c  # append-only
+    fk_targets = {fk.column.table.name for fk in t.foreign_keys}
+    assert {
+        "experiments",
+        "researchers",
+        "measurement_types",
+        "measurement_type_options",
+        "experiment_samples",
+    } <= fk_targets
+    # names resolve to ck_measurements_<token> at DDL time; here assert tokens are present
+    sqltexts = " ".join(
+        str(c.sqltext) for c in t.constraints if c.__class__.__name__ == "CheckConstraint"
+    )
+    assert "num_nonnulls(value_numeric, value_text, value_category) = 1" in sqltexts
+    assert "value_kind IN ('numeric','categorical','text')" in sqltexts

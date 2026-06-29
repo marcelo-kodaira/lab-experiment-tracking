@@ -5,6 +5,7 @@ CHECK constraints and composite FKs are written literally beside their columns.
 """
 
 from datetime import date, datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     BigInteger,
@@ -15,7 +16,9 @@ from sqlalchemy import (
     ForeignKey,
     ForeignKeyConstraint,
     Identity,
+    Index,
     Integer,
+    Numeric,
     Text,
     UniqueConstraint,
     text,
@@ -207,4 +210,93 @@ class ExperimentLineage(CreatedAtMixin, Base):
             "relation_type IN ('replication','iteration','refinement')",
             name="relation_type",
         ),
+    )
+
+
+# --- measurements: value_kind polymorphism (composite FKs + biconditional CHECKs) ---
+class Measurement(CreatedAtMixin, Base):
+    __tablename__ = "measurements"
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    experiment_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("experiments.id", ondelete="CASCADE"), nullable=False
+    )
+    sample_id: Mapped[int | None] = mapped_column(BigInteger)  # nullable: ambient readings
+    measurement_type_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    value_kind: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        comment="Discriminator (numeric|categorical|text): selects which value_* column carries the reading.",
+    )
+    value_numeric: Mapped[Decimal | None] = mapped_column(
+        Numeric, comment="Reading when value_kind='numeric'; NULL otherwise (biconditional CHECK)."
+    )
+    value_text: Mapped[str | None] = mapped_column(Text)
+    value_category: Mapped[str | None] = mapped_column(
+        Text,
+        comment="A measurement_type_options.code when value_kind='categorical'; NULL otherwise.",
+    )
+    measured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    recorded_by: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("researchers.id", ondelete="SET NULL")
+    )
+    notes: Mapped[str | None] = mapped_column(Text)
+    __table_args__ = (
+        # (a) value shape must match the catalog's kind. MATCH SIMPLE (PG default) means a NULL
+        #     value_kind would bypass this — value_kind is NOT NULL precisely to keep it load-bearing.
+        ForeignKeyConstraint(
+            ["measurement_type_id", "value_kind"],
+            ["measurement_types.id", "measurement_types.value_kind"],
+            ondelete="NO ACTION",
+            onupdate="NO ACTION",
+        ),
+        # (b) categorical value must be an allowed option of this type (NULL no-ops under MATCH SIMPLE)
+        ForeignKeyConstraint(
+            ["measurement_type_id", "value_category"],
+            ["measurement_type_options.measurement_type_id", "measurement_type_options.code"],
+            ondelete="NO ACTION",
+            onupdate="NO ACTION",
+        ),
+        # (c) a referenced sample must belong to this experiment (NULL sample_id no-ops)
+        ForeignKeyConstraint(
+            ["experiment_id", "sample_id"],
+            ["experiment_samples.experiment_id", "experiment_samples.sample_id"],
+            ondelete="NO ACTION",
+            onupdate="NO ACTION",
+        ),
+        CheckConstraint("value_kind IN ('numeric','categorical','text')", name="value_kind"),
+        CheckConstraint(
+            "(value_kind = 'numeric') = (value_numeric IS NOT NULL)", name="numeric_biconditional"
+        ),
+        CheckConstraint(
+            "(value_kind = 'text') = (value_text IS NOT NULL)", name="text_biconditional"
+        ),
+        CheckConstraint(
+            "(value_kind = 'categorical') = (value_category IS NOT NULL)",
+            name="categorical_biconditional",
+        ),
+        CheckConstraint(
+            "num_nonnulls(value_numeric, value_text, value_category) = 1", name="one_value"
+        ),
+        Index("ix_measurements_experiment_id_measured_at", "experiment_id", "measured_at"),
+        Index(
+            "ix_measurements_measurement_type_id_measured_at", "measurement_type_id", "measured_at"
+        ),
+        Index(
+            "ix_measurements_recorded_by",
+            "recorded_by",
+            postgresql_where=text("recorded_by IS NOT NULL"),
+        ),
+        Index(
+            "ix_measurements_type_category",
+            "measurement_type_id",
+            "value_category",
+            postgresql_where=text("value_category IS NOT NULL"),
+        ),
+        Index(
+            "ix_measurements_experiment_sample",
+            "experiment_id",
+            "sample_id",
+            postgresql_where=text("sample_id IS NOT NULL"),
+        ),
+        {"comment": "Single-table polymorphic readings; exactly one value_* populated per row."},
     )
