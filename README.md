@@ -25,7 +25,7 @@ Connect after seeding:
 ```bash
 docker compose exec db psql -U labtrack -d labtrack
 # or from the host if psql is installed:
-psql postgresql+psycopg://labtrack:labtrack@localhost:5432/labtrack
+psql postgresql://labtrack:labtrack@localhost:5432/labtrack
 ```
 
 Full reset (wipe volume and re-run from scratch):
@@ -128,7 +128,7 @@ roles ──1:N── researchers ──M:N(project_members)── projects ─�
 - **(b) Categorical-membership FK:** `(measurement_type_id, value_category) → measurement_type_options(measurement_type_id, code)` — `value_category` is NULL for numeric/text rows, so `MATCH SIMPLE` no-ops cleanly.
 - **(c) Sample-belongs-to-experiment FK:** `(experiment_id, sample_id) → experiment_samples(experiment_id, sample_id)` — NULL `sample_id` no-ops (ambient readings stay legal).
 
-**Four CHECK constraints close remaining holes:**
+**Five CHECK constraints close remaining holes:**
 
 ```sql
 CONSTRAINT ck_measurements_value_kind
@@ -183,7 +183,29 @@ Scientific records are not casually deleted; lifecycle is expressed by status, n
 
 ---
 
-## 6. Assumptions
+## 6. Indexing
+
+Postgres auto-indexes primary keys and unique constraints; it does **not** auto-index the referencing side of a foreign key.
+
+**`measurements` (fact table) — 5 indexes:**
+
+- `ix_measurements_experiment_id_measured_at` `(experiment_id, measured_at)` — timeseries queries for a single experiment.
+- `ix_measurements_measurement_type_id_measured_at` `(measurement_type_id, measured_at)` — analytics across all experiments for a given type.
+- `ix_measurements_recorded_by` `(recorded_by) WHERE recorded_by IS NOT NULL` — partial index; sparse FK (many rows are authorless instrument imports).
+- `ix_measurements_type_category` `(measurement_type_id, value_category) WHERE value_category IS NOT NULL` — partial index; only categorical rows have a non-null category.
+- `ix_measurements_experiment_sample` `(experiment_id, sample_id) WHERE sample_id IS NOT NULL` — partial index; supports the composite FK lookup for non-ambient readings only.
+
+**Junction / FK reverse-lookup — 5 indexes:**
+
+- `ix_experiments_project_id` — reverse-lookup experiments by project.
+- `ix_project_members_researcher_id` — reverse-lookup project memberships by researcher.
+- `ix_experiment_participants_researcher_id` — reverse-lookup experiment participants by researcher.
+- `ix_experiment_samples_sample_id` — reverse-lookup experiment assignments by sample.
+- `ix_experiment_lineage_derived_from_id` — reverse-lookup lineage edges by predecessor experiment.
+
+---
+
+## 7. Assumptions
 
 1. **Per-project role** (`project_members.project_role`: lead/collaborator) added beyond the brief's lab-wide role.
 2. **Experiment team is M:N** (`experiment_participants`) rather than a single lead; participant role is free-form.
@@ -203,7 +225,7 @@ Scientific records are not casually deleted; lifecycle is expressed by status, n
 
 ---
 
-## 7. Tradeoffs & what we chose not to do
+## 8. Tradeoffs & what we chose not to do
 
 - **Trigger-free polymorphism (composite FKs + biconditional CHECKs)** over JSONB / EAV / class-table inheritance. Buys DB-enforced type safety and queryable columns; costs a DDL change to add a *kind*. JSONB was rejected (no type safety, illegal categories accepted); per-type tables were rejected (DDL per kind, join sprawl).
 
@@ -219,7 +241,7 @@ Scientific records are not casually deleted; lifecycle is expressed by status, n
 
 ---
 
-## 8. Open questions for the lab
+## 9. Open questions for the lab
 
 1. Do you record **below-detection-limit / censored** results (`<0.01`, `ND`, ranges)? → drives a `value_operator`.
 2. Do you need **unit standardization / dimensional consistency** (a units table), or is canonical-unit-per-type enough?
@@ -236,7 +258,7 @@ Scientific records are not casually deleted; lifecycle is expressed by status, n
 
 ---
 
-## 9. Verification commands
+## 10. Verification commands
 
 **Bring up the database (if not already running):**
 
@@ -266,7 +288,7 @@ DATABASE_URL=postgresql+psycopg://labtrack:labtrack@localhost:5432/labtrack pyte
 DATABASE_URL=postgresql+psycopg://labtrack:labtrack@localhost:5432/labtrack alembic check
 ```
 
-Expected output: `No new upgrade operations detected.` Note: autogenerate does not detect trigger functions, trigger definitions, or CHECK body changes — see §10.
+Expected output: `No new upgrade operations detected.` Note: autogenerate does not detect trigger functions, trigger definitions, or CHECK body changes — see §11.
 
 **Smoke-test CHECKs fire** (optional, from psql):
 
@@ -288,7 +310,7 @@ docker compose exec -T db psql -U labtrack -d labtrack -c "SELECT count(*) FROM 
 
 ---
 
-## 10. Autogenerate caveats
+## 11. Autogenerate caveats
 
 Alembic `autogenerate` detects most schema changes but has deliberate blind spots — every generated revision is hand-reviewed before commit.
 

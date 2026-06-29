@@ -71,7 +71,9 @@ class MeasurementType(TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"), nullable=False)
     __table_args__ = (
         UniqueConstraint("code"),  # naming convention → uq_measurement_types_code
-        UniqueConstraint("id", "value_kind", name="id_value_kind"),  # composite-FK target
+        UniqueConstraint(
+            "id", "value_kind", name="uq_measurement_types_id_value_kind"
+        ),  # composite-FK target
         CheckConstraint("value_kind IN ('numeric','categorical','text')", name="value_kind"),
         CheckConstraint("unit IS NULL OR value_kind = 'numeric'", name="unit_numeric_only"),
     )
@@ -127,7 +129,7 @@ class Experiment(TimestampMixin, Base):
     __tablename__ = "experiments"
     id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
     project_id: Mapped[int] = mapped_column(
-        ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
+        BigInteger, ForeignKey("projects.id", ondelete="RESTRICT"), nullable=False
     )
     title: Mapped[str] = mapped_column(Text, nullable=False)
     hypothesis: Mapped[str | None] = mapped_column(Text)
@@ -141,6 +143,7 @@ class Experiment(TimestampMixin, Base):
             "end_date IS NULL OR start_date IS NULL OR end_date >= start_date",
             name="date_order",
         ),
+        Index("ix_experiments_project_id", "project_id"),
     )
 
 
@@ -171,6 +174,7 @@ class ProjectMember(CreatedAtMixin, Base):
             "project_role IS NULL OR project_role IN ('lead','collaborator')",
             name="project_role",
         ),
+        Index("ix_project_members_researcher_id", "researcher_id"),
     )
 
 
@@ -183,6 +187,7 @@ class ExperimentParticipant(CreatedAtMixin, Base):
         BigInteger, ForeignKey("researchers.id", ondelete="CASCADE"), primary_key=True
     )
     role: Mapped[str | None] = mapped_column(Text)  # free-form contribution role
+    __table_args__ = (Index("ix_experiment_participants_researcher_id", "researcher_id"),)
 
 
 class ExperimentSample(CreatedAtMixin, Base):
@@ -193,6 +198,7 @@ class ExperimentSample(CreatedAtMixin, Base):
     sample_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("samples.id", ondelete="RESTRICT"), primary_key=True
     )
+    __table_args__ = (Index("ix_experiment_samples_sample_id", "sample_id"),)
 
 
 class ExperimentLineage(CreatedAtMixin, Base):
@@ -210,6 +216,7 @@ class ExperimentLineage(CreatedAtMixin, Base):
             "relation_type IN ('replication','iteration','refinement')",
             name="relation_type",
         ),
+        Index("ix_experiment_lineage_derived_from_id", "derived_from_id"),
     )
 
 
