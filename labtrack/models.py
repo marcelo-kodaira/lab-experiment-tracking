@@ -70,7 +70,7 @@ class MeasurementType(TimestampMixin, Base):
     description: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"), nullable=False)
     __table_args__ = (
-        UniqueConstraint("code", name="code"),
+        UniqueConstraint("code"),  # naming convention → uq_measurement_types_code
         UniqueConstraint("id", "value_kind", name="id_value_kind"),  # composite-FK target
         CheckConstraint("value_kind IN ('numeric','categorical','text')", name="value_kind"),
         CheckConstraint("unit IS NULL OR value_kind = 'numeric'", name="unit_numeric_only"),
@@ -110,7 +110,7 @@ class Researcher(TimestampMixin, Base):
     role_code: Mapped[str] = mapped_column(
         ForeignKey("roles.code", ondelete="RESTRICT"), nullable=False
     )
-    __table_args__ = (UniqueConstraint("email", name="email"),)
+    __table_args__ = (UniqueConstraint("email"),)  # naming convention → uq_researchers_email
 
 
 class Project(TimestampMixin, Base):
@@ -153,7 +153,7 @@ class Sample(TimestampMixin, Base):
     )
     collected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     storage_location: Mapped[str | None] = mapped_column(Text)  # free text (hierarchy deferred)
-    __table_args__ = (UniqueConstraint("code", name="code"),)
+    __table_args__ = (UniqueConstraint("code"),)  # naming convention → uq_samples_code
 
 
 # --- junctions ---
