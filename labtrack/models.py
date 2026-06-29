@@ -151,3 +151,60 @@ class Sample(TimestampMixin, Base):
     collected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     storage_location: Mapped[str | None] = mapped_column(Text)  # free text (hierarchy deferred)
     __table_args__ = (UniqueConstraint("code", name="code"),)
+
+
+# --- junctions ---
+class ProjectMember(CreatedAtMixin, Base):
+    __tablename__ = "project_members"
+    project_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True
+    )
+    researcher_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("researchers.id", ondelete="CASCADE"), primary_key=True
+    )
+    project_role: Mapped[str | None] = mapped_column(Text)  # 'lead' | 'collaborator'
+    __table_args__ = (
+        CheckConstraint(
+            "project_role IS NULL OR project_role IN ('lead','collaborator')",
+            name="project_role",
+        ),
+    )
+
+
+class ExperimentParticipant(CreatedAtMixin, Base):
+    __tablename__ = "experiment_participants"
+    experiment_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("experiments.id", ondelete="CASCADE"), primary_key=True
+    )
+    researcher_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("researchers.id", ondelete="CASCADE"), primary_key=True
+    )
+    role: Mapped[str | None] = mapped_column(Text)  # free-form contribution role
+
+
+class ExperimentSample(CreatedAtMixin, Base):
+    __tablename__ = "experiment_samples"
+    experiment_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("experiments.id", ondelete="CASCADE"), primary_key=True
+    )
+    sample_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("samples.id", ondelete="RESTRICT"), primary_key=True
+    )
+
+
+class ExperimentLineage(CreatedAtMixin, Base):
+    __tablename__ = "experiment_lineage"
+    experiment_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("experiments.id", ondelete="CASCADE"), primary_key=True
+    )  # the follow-up
+    derived_from_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("experiments.id", ondelete="CASCADE"), primary_key=True
+    )  # the predecessor
+    relation_type: Mapped[str] = mapped_column(Text, nullable=False)
+    __table_args__ = (
+        CheckConstraint("experiment_id <> derived_from_id", name="no_self"),
+        CheckConstraint(
+            "relation_type IN ('replication','iteration','refinement')",
+            name="relation_type",
+        ),
+    )

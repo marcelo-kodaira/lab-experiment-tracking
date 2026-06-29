@@ -54,3 +54,17 @@ def test_researcher_email_unique() -> None:
         for c in getattr(u, "columns", [])
         if u.__class__.__name__ == "UniqueConstraint"
     )
+
+
+def test_experiment_samples_pk_is_target_of_measurements_fk() -> None:
+    t = Base.metadata.tables["experiment_samples"]
+    assert [c.name for c in t.primary_key.columns] == ["experiment_id", "sample_id"]
+
+
+def test_lineage_self_and_relation_checks_present() -> None:
+    t = Base.metadata.tables["experiment_lineage"]
+    sqltexts = " ".join(
+        str(c.sqltext) for c in t.constraints if c.__class__.__name__ == "CheckConstraint"
+    )
+    assert "experiment_id <> derived_from_id" in sqltexts
+    assert "relation_type" in sqltexts
